@@ -1,0 +1,124 @@
+Here's Phase V — the tables from your Phase III ERD, with constraints and sample data:
+
+```sql
+-- ============================================================
+-- PHASE V: TABLE IMPLEMENTATION
+-- Shoe Repair Management System | Prince Deinuks | 32239/2025
+-- Run as the new user: 32239_2025_Prince_ShoeRepair_DB
+-- ============================================================
+
+-- 1. CUSTOMER
+CREATE TABLE customer (
+    customer_id   NUMBER(10)    GENERATED ALWAYS AS IDENTITY,
+    full_name     VARCHAR2(100) NOT NULL,
+    phone         VARCHAR2(20)  NOT NULL,
+    email         VARCHAR2(100),
+    CONSTRAINT pk_customer       PRIMARY KEY (customer_id),
+    CONSTRAINT uq_customer_phone UNIQUE (phone),
+    CONSTRAINT ck_customer_email CHECK (email IS NULL OR email LIKE '%@%')
+);
+
+-- 2. TECHNICIAN
+CREATE TABLE technician (
+    technician_id NUMBER(10)    GENERATED ALWAYS AS IDENTITY,
+    full_name     VARCHAR2(100) NOT NULL,
+    specialty     VARCHAR2(50),
+    is_active     CHAR(1) DEFAULT 'Y' NOT NULL,
+    CONSTRAINT pk_technician        PRIMARY KEY (technician_id),
+    CONSTRAINT ck_technician_active CHECK (is_active IN ('Y','N'))
+);
+
+-- 3. SERVICE_TYPE
+CREATE TABLE service_type (
+    service_id   NUMBER(10)   GENERATED ALWAYS AS IDENTITY,
+    service_name VARCHAR2(80) NOT NULL,
+    base_price   NUMBER(8,2)  NOT NULL,
+    CONSTRAINT pk_service_type  PRIMARY KEY (service_id),
+    CONSTRAINT uq_service_name  UNIQUE (service_name),
+    CONSTRAINT ck_service_price CHECK (base_price > 0)
+);
+
+-- 4. SHOE_ITEM (child of CUSTOMER)
+CREATE TABLE shoe_item (
+    item_id     NUMBER(10)   GENERATED ALWAYS AS IDENTITY,
+    customer_id NUMBER(10)   NOT NULL,
+    item_type   VARCHAR2(40) NOT NULL,
+    brand       VARCHAR2(50),
+    description VARCHAR2(200),
+    CONSTRAINT pk_shoe_item         PRIMARY KEY (item_id),
+    CONSTRAINT fk_shoeitem_customer FOREIGN KEY (customer_id) REFERENCES customer(customer_id)
+);
+
+-- 5. REPAIR_JOB (child of SHOE_ITEM, TECHNICIAN)
+CREATE TABLE repair_job (
+    job_id        NUMBER(10)   GENERATED ALWAYS AS IDENTITY,
+    item_id       NUMBER(10)   NOT NULL,
+    technician_id NUMBER(10),
+    date_received DATE DEFAULT SYSDATE NOT NULL,
+    date_due      DATE,
+    status        VARCHAR2(20) DEFAULT 'RECEIVED' NOT NULL,
+    CONSTRAINT pk_repair_job     PRIMARY KEY (job_id),
+    CONSTRAINT fk_job_item       FOREIGN KEY (item_id) REFERENCES shoe_item(item_id),
+    CONSTRAINT fk_job_technician FOREIGN KEY (technician_id) REFERENCES technician(technician_id),
+    CONSTRAINT ck_job_status     CHECK (status IN ('RECEIVED','IN_PROGRESS','READY','COLLECTED','CANCELLED')),
+    CONSTRAINT ck_job_dates      CHECK (date_due IS NULL OR date_due >= date_received)
+);
+
+-- 6. JOB_SERVICE (resolves M:N between REPAIR_JOB and SERVICE_TYPE)
+CREATE TABLE job_service (
+    job_id     NUMBER(10) NOT NULL,
+    service_id NUMBER(10) NOT NULL,
+    quantity   NUMBER(4) DEFAULT 1 NOT NULL,
+    CONSTRAINT pk_job_service       PRIMARY KEY (job_id, service_id),
+    CONSTRAINT fk_jobservice_job     FOREIGN KEY (job_id) REFERENCES repair_job(job_id),
+    CONSTRAINT fk_jobservice_service FOREIGN KEY (service_id) REFERENCES service_type(service_id),
+    CONSTRAINT ck_jobservice_qty     CHECK (quantity > 0)
+);
+
+-- 7. PAYMENT (child of REPAIR_JOB)
+CREATE TABLE payment (
+    payment_id   NUMBER(10)  GENERATED ALWAYS AS IDENTITY,
+    job_id       NUMBER(10)  NOT NULL,
+    amount       NUMBER(8,2) NOT NULL,
+    payment_date DATE DEFAULT SYSDATE NOT NULL,
+    method       VARCHAR2(20) NOT NULL,
+    CONSTRAINT pk_payment       PRIMARY KEY (payment_id),
+    CONSTRAINT fk_payment_job    FOREIGN KEY (job_id) REFERENCES repair_job(job_id),
+    CONSTRAINT ck_payment_amount CHECK (amount > 0),
+    CONSTRAINT ck_payment_method CHECK (method IN ('CASH','CARD','MOBILE_MONEY','BANK_TRANSFER'))
+);
+
+COMMIT;
+
+-- ============================================================
+-- SAMPLE DATA (meaningful seed data)
+-- ============================================================
+INSERT INTO customer (full_name, phone, email) VALUES ('Jean Claude Habimana', '+250788111222', 'jc@example.com');
+INSERT INTO customer (full_name, phone, email) VALUES ('Aline Uwase', '+250788222333', 'aline@example.com');
+
+INSERT INTO technician (full_name, specialty) VALUES ('Jean Bosco', 'Sole Replacement');
+INSERT INTO technician (full_name, specialty) VALUES ('Marie Claire', 'Stitching & Leatherwork');
+
+INSERT INTO service_type (service_name, base_price) VALUES ('Sole Replacement', 8000);
+INSERT INTO service_type (service_name, base_price) VALUES ('Zipper Replacement', 4500);
+
+INSERT INTO shoe_item (customer_id, item_type, brand, description) VALUES (1, 'Sneaker', 'Nike', 'Right sole detached');
+INSERT INTO shoe_item (customer_id, item_type, brand, description) VALUES (2, 'Boot', 'Timberland', 'Broken zipper');
+
+INSERT INTO repair_job (item_id, technician_id, date_due, status) VALUES (1, 1, SYSDATE+3, 'IN_PROGRESS');
+INSERT INTO repair_job (item_id, technician_id, date_due, status) VALUES (2, 2, SYSDATE+2, 'READY');
+
+INSERT INTO job_service (job_id, service_id) VALUES (1, 1);
+INSERT INTO job_service (job_id, service_id) VALUES (2, 2);
+
+INSERT INTO payment (job_id, amount, method) VALUES (2, 6500, 'MOBILE_MONEY');
+
+COMMIT;
+```
+
+**Data integrity, satisfied by design:**
+- Every table has a **PK** (single or composite)
+- Every child table has an **FK** back to its parent (`shoe_item→customer`, `repair_job→shoe_item/technician`, `job_service→repair_job/service_type`, `payment→repair_job`)
+- **NOT NULL** on every required field, **UNIQUE** on phone/service name, **CHECK** constraints keep status, dates, prices, and payment method valid
+
+This is the same script as your `01_phase4_5_schema_and_tables.sql` file, just Phase V isolated. Ready for **Phase VI (PL/SQL)** when you are.
