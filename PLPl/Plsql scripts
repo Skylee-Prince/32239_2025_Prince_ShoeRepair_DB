@@ -1,0 +1,128 @@
+/* ============================================================
+   PHASE VI: PL/SQL PROGRAMMING
+   Shoe Repair Management System | Prince Deinuks | 32239/2025
+   Run as: 32239_2025_Prince_ShoeRepair_DB
+   ============================================================ */
+
+SET SERVEROUTPUT ON;
+
+-- ------------------------------------------------------------
+-- 1. PROCEDURE (parameterized) - create a new repair job
+--    Demonstrates: DML, exception handling, COMMIT/ROLLBACK
+-- ------------------------------------------------------------
+CREATE OR REPLACE PROCEDURE add_repair_job (
+    p_item_id       IN repair_job.item_id%TYPE,
+    p_technician_id IN repair_job.technician_id%TYPE,
+    p_due_date      IN repair_job.date_due%TYPE
+) AS
+    v_exists NUMBER;
+BEGIN
+    -- validate the shoe item exists
+    SELECT COUNT(*) INTO v_exists FROM shoe_item WHERE item_id = p_item_id;
+    IF v_exists = 0 THEN
+        RAISE_APPLICATION_ERROR(-20001, 'Shoe item ' || p_item_id || ' does not exist.');
+    END IF;
+
+    INSERT INTO repair_job (item_id, technician_id, date_due, status)
+    VALUES (p_item_id, p_technician_id, p_due_date, 'RECEIVED');
+
+    COMMIT;
+    DBMS_OUTPUT.PUT_LINE('Repair job created for item ' || p_item_id);
+
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        DBMS_OUTPUT.PUT_LINE('Error creating job: ' || SQLERRM);
+END add_repair_job;
+/
+
+-- Test it:
+-- EXEC add_repair_job(1, 1, SYSDATE + 3);
+
+
+-- ------------------------------------------------------------
+-- 2. FUNCTION - total cost of a repair job
+--    Demonstrates: RETURN value, aggregate query
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION get_job_total (
+    p_job_id IN repair_job.job_id%TYPE
+) RETURN NUMBER AS
+    v_total NUMBER := 0;
+BEGIN
+    SELECT NVL(SUM(js.quantity * st.base_price), 0)
+    INTO v_total
+    FROM job_service js
+    JOIN service_type st ON st.service_id = js.service_id
+    WHERE js.job_id = p_job_id;
+
+    RETURN v_total;
+
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        RETURN 0;
+END get_job_total;
+/
+
+-- Test it:
+-- SELECT get_job_total(1) FROM dual;
+
+
+-- ------------------------------------------------------------
+-- 3. PACKAGE - groups related job-status operations together
+--    Demonstrates: package spec + body, procedure, function, cursor
+-- ------------------------------------------------------------
+CREATE OR REPLACE PACKAGE pkg_repair AS
+    PROCEDURE update_job_status (p_job_id IN NUMBER, p_status IN VARCHAR2);
+    FUNCTION  count_jobs_by_status (p_status IN VARCHAR2) RETURN NUMBER;
+    PROCEDURE list_jobs_by_status (p_status IN VARCHAR2);
+END pkg_repair;
+/
+
+CREATE OR REPLACE PACKAGE BODY pkg_repair AS
+
+    -- update a job's status safely
+    PROCEDURE update_job_status (p_job_id IN NUMBER, p_status IN VARCHAR2) AS
+    BEGIN
+        UPDATE repair_job SET status = p_status WHERE job_id = p_job_id;
+
+        IF SQL%ROWCOUNT = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Job ' || p_job_id || ' not found.');
+        END IF;
+
+        COMMIT;
+        DBMS_OUTPUT.PUT_LINE('Job ' || p_job_id || ' updated to ' || p_status);
+    EXCEPTION
+        WHEN OTHERS THEN
+            ROLLBACK;
+            DBMS_OUTPUT.PUT_LINE('Error: ' || SQLERRM);
+    END update_job_status;
+
+    -- count how many jobs currently have a given status
+    FUNCTION count_jobs_by_status (p_status IN VARCHAR2) RETURN NUMBER AS
+        v_count NUMBER;
+    BEGIN
+        SELECT COUNT(*) INTO v_count FROM repair_job WHERE status = p_status;
+        RETURN v_count;
+    END count_jobs_by_status;
+
+    -- CURSOR: loop through and print all jobs with a given status
+    PROCEDURE list_jobs_by_status (p_status IN VARCHAR2) AS
+        CURSOR c_jobs IS
+            SELECT job_id, item_id, date_due
+            FROM repair_job
+            WHERE status = p_status;
+    BEGIN
+        FOR r_job IN c_jobs LOOP
+            DBMS_OUTPUT.PUT_LINE('Job ' || r_job.job_id ||
+                                  ' | Item ' || r_job.item_id ||
+                                  ' | Due ' || TO_CHAR(r_job.date_due, 'YYYY-MM-DD'));
+        END LOOP;
+    END list_jobs_by_status;
+
+END pkg_repair;
+/
+
+-- Test it:
+-- EXEC pkg_repair.update_job_status(1, 'READY');
+-- SELECT pkg_repair.count_jobs_by_status('READY') FROM dual;
+-- EXEC pkg_repair.list_jobs_by_status('READY');
